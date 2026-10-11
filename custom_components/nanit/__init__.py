@@ -111,6 +111,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NanitConfigEntry) -> boo
     _async_remove_deprecated_entities(hass, hub)
     if read_only:
         _async_remove_control_entities(hass, entry)
+    else:
+        _async_remove_read_only_entities(hass, entry)
 
     # Home Assistant's stream and go2rtc logs would otherwise print the
     # access token that sits in the camera's stream URL.
@@ -501,6 +503,28 @@ def _async_remove_control_entities(hass: HomeAssistant, entry: NanitConfigEntry)
     for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
         if reg_entry.domain not in allowed:
             LOGGER.info("Read-only mode: removing control entity %s", reg_entry.entity_id)
+            ent_reg.async_remove(reg_entry.entity_id)
+
+
+# Entities that exist only in read-only mode, as (domain, unique_id suffix).
+_READ_ONLY_ENTITIES: list[tuple[str, str]] = [
+    ("binary_sensor", "_camera_power"),
+]
+
+
+def _async_remove_read_only_entities(hass: HomeAssistant, entry: NanitConfigEntry) -> None:
+    """Remove the read-only stand-in entities once read-only mode is off.
+
+    With the mode off the power switch is back, and the camera power sensor
+    would otherwise stay in the registry as "unavailable".
+    """
+    ent_reg = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if any(
+            reg_entry.domain == domain and reg_entry.unique_id.endswith(suffix)
+            for domain, suffix in _READ_ONLY_ENTITIES
+        ):
+            LOGGER.info("Read-only mode off: removing %s", reg_entry.entity_id)
             ent_reg.async_remove(reg_entry.entity_id)
 
 
