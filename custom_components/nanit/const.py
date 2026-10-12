@@ -51,6 +51,8 @@ CONF_CAMERA_IPS = "camera_ips"
 CONF_SPEAKER_UID = "speaker_uid"
 CONF_SPEAKER_IP = "speaker_ip"
 CONF_SPEAKER_IPS = "speaker_ips"
+# speaker_uid → name for machines no baby is paired with (entry data).
+CONF_UNPAIRED_SPEAKERS = "unpaired_speakers"
 CONF_READ_ONLY = "read_only"
 
 

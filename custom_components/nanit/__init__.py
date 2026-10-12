@@ -26,6 +26,7 @@ from .const import (
     CONF_CAMERA_UID,
     CONF_SPEAKER_IPS,
     CONF_STORE_CREDENTIALS,
+    CONF_UNPAIRED_SPEAKERS,
     DOMAIN,
     LOGGER,
     PLATFORMS,
@@ -363,12 +364,24 @@ async def _async_migrate_sl_identities(
     # consumed the legacy camera-keyed shape. Persisting earlier would
     # destroy the pairing a crashed or interrupted first boot still needs.
     stored_map = entry.data.get("speaker_uid_map", {})
-    if hub.speaker_uid_map and hub.speaker_uid_map != stored_map:
+    # An empty map is only written when this setup emptied it on purpose
+    # (speakers moved to unpaired), never after a resolution collapse.
+    if (hub.speaker_uid_map or hub.unpaired_from_map) and hub.speaker_uid_map != stored_map:
         hass.config_entries.async_update_entry(
             entry,
             data={**entry.data, "speaker_uid_map": hub.speaker_uid_map},
         )
         LOGGER.debug("Persisted speaker UID map for %d speaker(s)", len(hub.speaker_uid_map))
+
+    # Unpaired speakers are persisted for the same reason: a failed lookup
+    # on a later boot falls back to this list instead of dropping them.
+    # Skipped when /babies came back empty: setup never got as far as the
+    # lookup, and writing its empty result would erase the fallback.
+    if hub.babies and hub.unpaired_speakers != entry.data.get(CONF_UNPAIRED_SPEAKERS, {}):
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, CONF_UNPAIRED_SPEAKERS: hub.unpaired_speakers},
+        )
 
 
 def _async_remove_stale_devices(
@@ -397,6 +410,10 @@ def _async_remove_stale_devices(
     stored_map = entry.data.get("speaker_uid_map", {})
     if isinstance(stored_map, dict):
         valid_uids.update(uid for uid in stored_map.values() if isinstance(uid, str))
+    valid_uids.update(hub.unpaired_speakers)
+    stored_unpaired = entry.data.get(CONF_UNPAIRED_SPEAKERS, {})
+    if isinstance(stored_unpaired, dict):
+        valid_uids.update(uid for uid in stored_unpaired if isinstance(uid, str))
 
     # A resolution collapse (babies present but nothing recognized) means
     # we cannot judge staleness at all this boot — don't remove anything.
@@ -455,6 +472,14 @@ async def async_remove_config_entry_device(
             LOGGER.info(
                 "Removed %s from the persisted speaker map (device deleted by user)",
                 device_uids,
+            )
+    stored_unpaired = entry.data.get(CONF_UNPAIRED_SPEAKERS, {})
+    if isinstance(stored_unpaired, dict):
+        pruned_unpaired = {k: v for k, v in stored_unpaired.items() if k not in device_uids}
+        if pruned_unpaired != stored_unpaired:
+            hass.config_entries.async_update_entry(
+                entry,
+                data={**entry.data, CONF_UNPAIRED_SPEAKERS: pruned_unpaired},
             )
     return True
 
