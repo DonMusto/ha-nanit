@@ -229,9 +229,17 @@ async def test_default_setup_removes_the_read_only_power_sensor(
         unique_id="other@x",
     )
     other_account.add_to_hass(hass)
-    foreign = ent_reg.async_get_or_create(
-        "binary_sensor", DOMAIN, "other_cam_camera_power", config_entry=other_account
-    )
+    # Another integration's binary sensor, even with the same unique ID, is never swept.
+    other_integration = MockConfigEntry(domain="hue")
+    other_integration.add_to_hass(hass)
+    foreign = [
+        ent_reg.async_get_or_create(
+            "binary_sensor", DOMAIN, "other_cam_camera_power", config_entry=other_account
+        ),
+        ent_reg.async_get_or_create(
+            "binary_sensor", "hue", f"{uid}_camera_power", config_entry=other_integration
+        ),
+    ]
 
     with patch.object(
         hass.config_entries, "async_forward_entry_setups", AsyncMock(return_value=True)
@@ -239,7 +247,7 @@ async def test_default_setup_removes_the_read_only_power_sensor(
         assert await async_setup_entry(hass, entry)
 
     assert ent_reg.async_get(sensor.entity_id) is None
-    for reg_entry in [*kept, foreign]:
+    for reg_entry in [*kept, *foreign]:
         assert ent_reg.async_get(reg_entry.entity_id) is not None
 
 
@@ -395,7 +403,11 @@ def test_card_falls_back_to_the_power_sensor() -> None:
         encoding="utf-8"
     )
 
-    assert "result.power_state = eid;" in utils
+    # the condition itself, so swapping it for `false` fails here
+    assert (
+        '} else if (deviceClass === "power" || suffix.endsWith("_camera_power")) {\n'
+        "        result.power_state = eid;"
+    ) in utils
     assert "entities.power ?? entities.power_state" in card
     # the power button still needs the switch: read-only mode shows no button
     assert "const showPowerButton = entities.power &&" in card
